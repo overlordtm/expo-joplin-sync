@@ -24,7 +24,7 @@ parser.add_argument(
 api_url = os.getenv("JOPLIN_API_URL", "http://localhost:41184")
 api_token = os.getenv(
     "JOPLIN_SYNC_TOKEN",
-    "a3e4c2760b6f4681ea396cc20e60d034f716a0d6e2d30916174c7275bdd3e4370f8f178322a9e8a1f0fd836b7babf92c83aabe77f25415f2d2ee7f6321991b80",
+    "DUMMY",
 )
 
 
