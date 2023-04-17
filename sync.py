@@ -35,6 +35,11 @@ class JoplinSync:
 
     # Folders
 
+    def folders(self):
+        response = requests.get(f"{api_url}/folders?token={self.api_token}")
+        response.raise_for_status()
+        return response.json()["items"]
+
     def find_folder(self, search_query):
         response = requests.get(
             f"{api_url}/search?query={search_query}&type=folder&token={api_token}"
@@ -105,8 +110,10 @@ def read_dump(pth="hosts.json"):
         return json.load(f)
 
 
-def get_or_create_folder(j: JoplinSync, folder_name, parent_folder_id=None):
-    folder = j.find_folder(folder_name)
+def get_or_create_folder(
+    j: JoplinSync, folder_name, folder_search, parent_folder_id=None
+):
+    folder = j.find_folder(folder_search)
     if len(folder["items"]) == 0:
         return j.create_folder(folder_name, parent_folder_id=parent_folder_id)
     elif len(folder["items"]) == 1:
@@ -218,11 +225,79 @@ def sync_note(j: JoplinSync, expo_data: dict, parent_id: str):
 
     logging.info(f"Syncing {note_title} to {notebook_name}")
 
-    segment_folder = get_or_create_folder(j, notebook_name, parent_id)
+    segment_folder = get_or_create_folder(j, notebook_name, notebook_name, parent_id)
+    print("Segment folder", segment_folder)
 
-    host_folder = get_or_create_folder(j, expo_data["expo_id"], segment_folder["id"])
+    assert segment_folder["id"] is not None
+
+    host_folder = get_or_create_folder(
+        j, expo_data["expo_id"], expo_data["expo_id"], segment_folder["id"]
+    )
+    print("Host folder", host_folder)
+
+    # list all fodlers, find child of current hoist_folder and find todos
+    todo_folder = [
+        folder
+        for folder in j.folders()
+        if folder["parent_id"] == host_folder["id"] and folder["title"] == "TODO"
+    ]
+
+    if len(todo_folder) == 0:
+        todo_folder = j.create_folder("TODO", parent_folder_id=host_folder["id"])
+    else:
+        todo_folder = todo_folder[0]
+
+    # create todos
+    todos = [
+        "/etc/passwd",
+        "/etc/shadow",
+        "/etc/group",
+        "/etc/hosts",
+        "/etc/sudoers*",
+        "/etc/ssh",
+        "/etc/login*",
+        "/etc/default/*",
+        "/etc/systemd*",
+        "/etc/init.d/",
+        "/etc/cron*",
+        "/etc/profile*",
+        "services: validate credentials",
+        "services: check config",
+        "services: check file perms",
+        "services: check port bindings to public ips",
+        "services: check service auth settings",
+        "services: check for service accounts",
+    ]
+
+    for todo in todos:
+        title = f"{todo}"
+        notes = j.find_note(f"{title}")
+
+
+        # find note that have todo_folder as parent
+        notes2 = [note for note in notes["items"] if note["parent_id"] == todo_folder["id"]]
+        assert len(notes2) <= 1
+
+        note = notes2[0] if len(notes2) > 0 else {}
+
+        print(json.dumps(note, indent=4))
+
+        note["title"] = title
+        note["body"] = expo_data["expo_id"]
+        note["is_todo"] = True
+        note["parent_id"] = todo_folder["id"]
+        note["tags"] = "todo"
+
+        if note.get("id"):
+            logging.info(f"Updating TODO note {todo}")
+            j.update_note(note)
+        else:
+            logging.info(f"Creating TODO note {todo}")
+            j.create_note(note)
 
     # check if note exists
+    assert host_folder["id"] is not None
+
     notes = j.find_note(f"{note_title} notebook:{notebook_name}")
 
     note = notes["items"].pop() if len(notes["items"]) > 0 else {}
@@ -248,7 +323,7 @@ def sync(dump_path, host_path):
 
     j = JoplinSync(api_url, api_token)
 
-    folder_hosts = get_or_create_folder(j, "10-Hosts")
+    folder_hosts = get_or_create_folder(j, "10-Hosts", "10-Hosts")
 
     for host in expo_dump:
         if host["expo_id"] in my_hosts:
@@ -256,7 +331,7 @@ def sync(dump_path, host_path):
                 sync_note(j, host, folder_hosts["id"])
                 # time.sleep(0.1)
             except Exception as e:
-                logging.error(f"Error syncing {host['expo_id']}: {e}")
+                logging.exception(f"Error syncing {host['expo_id']}: {e}")
 
 
 if __name__ == "__main__":
