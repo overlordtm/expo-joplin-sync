@@ -36,9 +36,19 @@ class JoplinSync:
     # Folders
 
     def folders(self):
-        response = requests.get(f"{api_url}/folders?token={self.api_token}")
-        response.raise_for_status()
-        return response.json()["items"]
+        has_more = True
+        page = 1
+        items = []
+        while has_more:
+            response = requests.get(f"{api_url}/folders?token={self.api_token}&page={page}")
+            response.raise_for_status()
+            data = response.json()
+            items += response.json()["items"]
+            if data["has_more"]:
+                page = page+1
+            else:
+                has_more = False
+        return items
 
     def find_folder(self, search_query):
         response = requests.get(
@@ -218,7 +228,7 @@ def generate_note(d: dict):
 
 
 def sync_note(j: JoplinSync, expo_data: dict, parent_id: str):
-    """Syncs a single note to Joplin"""
+    """Syncs a single host notes to Joplin"""
     notebook_name = f"{expo_data['segment']}"
     note_title = f"{expo_data['expo_id']}"
     note_body, note_tags = generate_note(expo_data)
@@ -241,6 +251,8 @@ def sync_note(j: JoplinSync, expo_data: dict, parent_id: str):
         for folder in j.folders()
         if folder["parent_id"] == host_folder["id"] and folder["title"] == "TODO"
     ]
+
+    assert len(todo_folder) < 2
 
     if len(todo_folder) == 0:
         todo_folder = j.create_folder("TODO", parent_folder_id=host_folder["id"])
@@ -280,7 +292,7 @@ def sync_note(j: JoplinSync, expo_data: dict, parent_id: str):
 
         note = notes2[0] if len(notes2) > 0 else {}
 
-        print(json.dumps(note, indent=4))
+        print("TODO", json.dumps(note, indent=4))
 
         note["title"] = title
         note["body"] = expo_data["expo_id"]
@@ -328,8 +340,8 @@ def sync(dump_path, host_path):
     for host in expo_dump:
         if host["expo_id"] in my_hosts:
             try:
+                logging.info(f"Syncing host {host['expo_id']}")
                 sync_note(j, host, folder_hosts["id"])
-                # time.sleep(0.1)
             except Exception as e:
                 logging.exception(f"Error syncing {host['expo_id']}: {e}")
 
